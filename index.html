@@ -426,7 +426,7 @@
     <div class="actions-row">
       <div class="count-pill">Total entries: <strong id="entry-count">0</strong></div>
       <div class="action-btns">
-        <button class="btn-outline" onclick="clearAll()">Clear all</button>
+        <button class="btn-outline" onclick="refreshEntries()">↻ Refresh</button>
         <button class="btn-green" onclick="downloadCSV()">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
             <path d="M7 1v8M4 6l3 3 3-3M2 11h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -465,32 +465,34 @@
 </div>
 
 <script>
-  // ── CONFIG: change event name here ──────────────────────────────
-  const EVENT_NAME = 'Your Event Name';
-  // ────────────────────────────────────────────────────────────────
+  // ══════════════════════════════════════════════════════════════
+  //  CONFIG — update these two values before going live
+  // ══════════════════════════════════════════════════════════════
+  const EVENT_NAME    = 'Pelican Golf Tournament 2026';   // shown on the badge
+  const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxYcqBKt90sQfJmQ5jPxhYhnF8TPy5RzU0uODnK96CxtMhTsvCZu0epfHdWxvSMsuo/exec'; // paste your Web App URL
+  const ADMIN_PASSWORD  = 'exsifPGT2026';       // change to your password
+  // ══════════════════════════════════════════════════════════════
 
   document.getElementById('event-badge').textContent = EVENT_NAME;
 
-  let entries = [];
-  try { entries = JSON.parse(localStorage.getItem('eventLeads') || '[]'); } catch(e){}
-
-  // ── ADMIN PASSWORD — change this to your own password ──────────
-  const ADMIN_PASSWORD = 'exsifPGT2026';
-  // ─────────────────────────────────────────────────────────────────
   let adminUnlocked = false;
+  let entries = [];
 
+  // ── Tab switching ────────────────────────────────────────────
   function switchTab(tab) {
     const isForm = tab === 'form';
-    document.querySelectorAll('.tab').forEach((t, i) => t.classList.toggle('active', isForm ? i === 0 : i === 1));
+    document.querySelectorAll('.tab').forEach((t, i) =>
+      t.classList.toggle('active', isForm ? i === 0 : i === 1));
     document.getElementById('view-form').classList.toggle('hidden', !isForm);
     document.getElementById('view-data').classList.toggle('hidden', isForm);
     if (!isForm) {
       document.getElementById('pw-gate').classList.toggle('hidden', adminUnlocked);
       document.getElementById('data-content').classList.toggle('hidden', !adminUnlocked);
-      if (adminUnlocked) renderTable();
+      if (adminUnlocked) loadEntries();
     }
   }
 
+  // ── Password check ───────────────────────────────────────────
   function checkPassword() {
     const val = document.getElementById('pw-input').value;
     if (val === ADMIN_PASSWORD) {
@@ -499,7 +501,7 @@
       document.getElementById('data-content').classList.remove('hidden');
       document.getElementById('pw-input').value = '';
       document.getElementById('pw-error').classList.remove('show');
-      renderTable();
+      loadEntries();
     } else {
       document.getElementById('pw-error').classList.add('show');
       document.getElementById('pw-input').value = '';
@@ -507,6 +509,7 @@
     }
   }
 
+  // ── Submit form → send to Google Sheets ─────────────────────
   function submitForm() {
     const v = id => document.getElementById(id).value.trim();
     const firstName = v('firstName'), lastName = v('lastName'), email = v('email');
@@ -514,21 +517,55 @@
       alert('Please fill in first name, last name, and email before submitting.');
       return;
     }
-    const entry = {
-      firstName, lastName,
-      company: v('company'),
-      email,
-      phone: v('phone'),
-      ts: new Date().toLocaleString()
-    };
-    entries.push(entry);
-    try { localStorage.setItem('eventLeads', JSON.stringify(entries)); } catch(e){}
-    ['firstName','lastName','company','email','phone'].forEach(id => document.getElementById(id).value = '');
-    const toast = document.getElementById('success-toast');
-    toast.classList.add('show');
-    setTimeout(() => toast.classList.remove('show'), 3000);
+    if (APPS_SCRIPT_URL === 'YOUR_APPS_SCRIPT_URL_HERE') {
+      alert('Setup not complete: please add your Google Apps Script URL to the config at the top of the script.');
+      return;
+    }
+
+    const btn = document.querySelector('.submit-btn');
+    btn.textContent = 'Saving…';
+    btn.disabled = true;
+
+    const payload = { action: 'add', firstName, lastName,
+      company: v('company'), email, phone: v('phone') };
+
+    fetch(APPS_SCRIPT_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+    .then(() => {
+      ['firstName','lastName','company','email','phone'].forEach(id =>
+        document.getElementById(id).value = '');
+      const toast = document.getElementById('success-toast');
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 3000);
+    })
+    .catch(() => alert('Network error — please try again.'))
+    .finally(() => { btn.textContent = 'Submit details'; btn.disabled = false; });
   }
 
+  // ── Load entries from Google Sheets ─────────────────────────
+  function loadEntries() {
+    if (APPS_SCRIPT_URL === 'YOUR_APPS_SCRIPT_URL_HERE') {
+      setStatus('⚠ Apps Script URL not configured yet.'); return;
+    }
+    setStatus('Loading entries…');
+    fetch(APPS_SCRIPT_URL + '?action=get')
+      .then(r => r.json())
+      .then(data => { entries = data; renderTable(); })
+      .catch(() => setStatus('Could not load data. Check your Apps Script URL.'));
+  }
+
+  function setStatus(msg) {
+    document.getElementById('entry-count').textContent = '…';
+    document.getElementById('empty-state').textContent = msg;
+    document.getElementById('empty-state').classList.remove('hidden');
+    document.getElementById('table-wrap').classList.add('hidden');
+  }
+
+  // ── Render table ─────────────────────────────────────────────
   function renderTable() {
     document.getElementById('entry-count').textContent = entries.length;
     document.getElementById('empty-state').classList.toggle('hidden', entries.length > 0);
@@ -551,18 +588,12 @@
     return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }
 
-  function clearAll() {
-    if (!entries.length) return;
-    if (!confirm(`Delete all ${entries.length} entr${entries.length === 1 ? 'y' : 'ies'}? This cannot be undone.`)) return;
-    entries = [];
-    try { localStorage.removeItem('eventLeads'); } catch(e){}
-    renderTable();
-  }
-
+  // ── Download CSV ─────────────────────────────────────────────
   function downloadCSV() {
     if (!entries.length) { alert('No entries to download yet.'); return; }
     const headers = ['#','First Name','Last Name','Company','Email','Contact Number','Timestamp'];
-    const rows = entries.map((e, i) => [i+1, e.firstName, e.lastName, e.company||'', e.email, e.phone||'', e.ts]);
+    const rows = entries.map((e, i) =>
+      [i+1, e.firstName, e.lastName, e.company||'', e.email, e.phone||'', e.ts]);
     const csv = [headers, ...rows]
       .map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(','))
       .join('\n');
@@ -570,10 +601,11 @@
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = `${EVENT_NAME.replace(/\s+/g,'-').toLowerCase()}-leads-${new Date().toISOString().slice(0,10)}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
   }
+
+  // ── Refresh button ───────────────────────────────────────────
+  function refreshEntries() { if (adminUnlocked) loadEntries(); }
 </script>
 </body>
 </html>
