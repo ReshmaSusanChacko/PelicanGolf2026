@@ -466,11 +466,11 @@
 
 <script>
   // ══════════════════════════════════════════════════════════════
-  //  CONFIG — update these two values before going live
+  //  CONFIG — update these values before going live
   // ══════════════════════════════════════════════════════════════
-  const EVENT_NAME    = 'Pelican Golf Tournament 2026';   // shown on the badge
-  const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxYcqBKt90sQfJmQ5jPxhYhnF8TPy5RzU0uODnK96CxtMhTsvCZu0epfHdWxvSMsuo/exec'; // paste your Web App URL
-  const ADMIN_PASSWORD  = 'exsifPGT2026';       // change to your password
+  const EVENT_NAME      = 'Pelican Golf Tournament 2026';
+  const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxYcqBKt90sQfJmQ5jPxhYhnF8TPy5RzU0uODnK96CxtMhTsvCZu0epfHdWxvSMsuo/exec'; // paste your Web App URL here
+  const ADMIN_PASSWORD  = 'exsifPGT2026';
   // ══════════════════════════════════════════════════════════════
 
   document.getElementById('event-badge').textContent = EVENT_NAME;
@@ -509,16 +509,18 @@
     }
   }
 
-  // ── Submit form → send to Google Sheets ─────────────────────
+  // ── Submit form ──────────────────────────────────────────────
+  // Uses GET + URL params (most reliable way to call Apps Script from a browser)
   function submitForm() {
     const v = id => document.getElementById(id).value.trim();
     const firstName = v('firstName'), lastName = v('lastName'), email = v('email');
+
     if (!firstName || !lastName || !email) {
       alert('Please fill in first name, last name, and email before submitting.');
       return;
     }
     if (APPS_SCRIPT_URL === 'YOUR_APPS_SCRIPT_URL_HERE') {
-      alert('Setup not complete: please add your Google Apps Script URL to the config at the top of the script.');
+      alert('Setup not complete: please paste your Google Apps Script URL into the config.');
       return;
     }
 
@@ -526,49 +528,66 @@
     btn.textContent = 'Saving…';
     btn.disabled = true;
 
-    const payload = { action: 'add', firstName, lastName,
-      company: v('company'), email, phone: v('phone') };
+    // Build URL with params — Apps Script doGet handles this
+    const params = new URLSearchParams({
+      action:    'add',
+      firstName,
+      lastName,
+      company:   v('company'),
+      email,
+      phone:     v('phone')
+    });
 
-    fetch(APPS_SCRIPT_URL, {
-      method: 'POST',
-      mode: 'no-cors',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    })
-    .then(() => {
+    // Use an image tag trick to fire the request — avoids ALL CORS issues
+    const img = new Image();
+    img.onload = img.onerror = function() {
       ['firstName','lastName','company','email','phone'].forEach(id =>
         document.getElementById(id).value = '');
+      btn.textContent = 'Submit details';
+      btn.disabled = false;
       const toast = document.getElementById('success-toast');
       toast.classList.add('show');
-      setTimeout(() => toast.classList.remove('show'), 3000);
-    })
-    .catch(() => alert('Network error — please try again.'))
-    .finally(() => { btn.textContent = 'Submit details'; btn.disabled = false; });
+      setTimeout(() => toast.classList.remove('show'), 3500);
+    };
+    img.src = APPS_SCRIPT_URL + '?' + params.toString();
   }
 
   // ── Load entries from Google Sheets ─────────────────────────
   function loadEntries() {
     if (APPS_SCRIPT_URL === 'YOUR_APPS_SCRIPT_URL_HERE') {
-      setStatus('⚠ Apps Script URL not configured yet.'); return;
+      showStatus('⚠ Apps Script URL not configured yet.'); return;
     }
-    setStatus('Loading entries…');
-    fetch(APPS_SCRIPT_URL + '?action=get')
-      .then(r => r.json())
-      .then(data => { entries = data; renderTable(); })
-      .catch(() => setStatus('Could not load data. Check your Apps Script URL.'));
+    showStatus('Loading…');
+
+    fetch(APPS_SCRIPT_URL + '?action=get', { method: 'GET' })
+      .then(r => {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      })
+      .then(data => {
+        if (!Array.isArray(data)) throw new Error('Unexpected response');
+        entries = data;
+        renderTable();
+      })
+      .catch(err => {
+        showStatus('⚠ Could not load data. Check your Apps Script URL and that it is deployed as "Anyone" access. (' + err.message + ')');
+      });
   }
 
-  function setStatus(msg) {
+  function showStatus(msg) {
     document.getElementById('entry-count').textContent = '…';
-    document.getElementById('empty-state').textContent = msg;
-    document.getElementById('empty-state').classList.remove('hidden');
+    const es = document.getElementById('empty-state');
+    es.innerHTML = msg;
+    es.classList.remove('hidden');
     document.getElementById('table-wrap').classList.add('hidden');
   }
 
   // ── Render table ─────────────────────────────────────────────
   function renderTable() {
     document.getElementById('entry-count').textContent = entries.length;
-    document.getElementById('empty-state').classList.toggle('hidden', entries.length > 0);
+    const empty = document.getElementById('empty-state');
+    empty.innerHTML = 'No entries yet.<br>Share the QR code to start collecting!';
+    empty.classList.toggle('hidden', entries.length > 0);
     document.getElementById('table-wrap').classList.toggle('hidden', entries.length === 0);
     document.getElementById('table-body').innerHTML = entries.map((e, i) =>
       `<tr>
@@ -585,7 +604,7 @@
 
   function esc(s) {
     if (!s) return '';
-    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }
 
   // ── Download CSV ─────────────────────────────────────────────
@@ -596,15 +615,16 @@
       [i+1, e.firstName, e.lastName, e.company||'', e.email, e.phone||'', e.ts]);
     const csv = [headers, ...rows]
       .map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(','))
-      .join('\n');
-    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+      .join('
+');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = `${EVENT_NAME.replace(/\s+/g,'-').toLowerCase()}-leads-${new Date().toISOString().slice(0,10)}.csv`;
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
   }
 
-  // ── Refresh button ───────────────────────────────────────────
+  // ── Refresh ──────────────────────────────────────────────────
   function refreshEntries() { if (adminUnlocked) loadEntries(); }
 </script>
 </body>
