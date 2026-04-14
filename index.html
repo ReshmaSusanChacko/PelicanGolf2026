@@ -318,6 +318,43 @@
     .tabs { margin: 1rem 1rem 0; }
     .header { padding: 1.5rem 1rem 1.25rem; }
   }
+
+  /* Password gate */
+  .pw-gate {
+    padding: 2rem 1.5rem;
+    text-align: center;
+  }
+  .pw-gate-icon {
+    font-size: 32px;
+    margin-bottom: 12px;
+  }
+  .pw-gate h3 {
+    font-size: 16px;
+    font-weight: 500;
+    color: var(--text-primary);
+    margin-bottom: 6px;
+  }
+  .pw-gate p {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-bottom: 1.25rem;
+  }
+  .pw-row {
+    display: flex;
+    gap: 8px;
+    max-width: 320px;
+    margin: 0 auto;
+  }
+  .pw-row input {
+    flex: 1;
+  }
+  .pw-error {
+    color: #a32d2d;
+    font-size: 12px;
+    margin-top: 8px;
+    display: none;
+  }
+  .pw-error.show { display: block; }
 </style>
 </head>
 <body>
@@ -370,6 +407,22 @@
   </div>
 
   <div class="panel hidden" id="view-data">
+
+    <!-- Password gate -->
+    <div id="pw-gate" class="pw-gate">
+      <div class="pw-gate-icon">🔒</div>
+      <h3>Admin access required</h3>
+      <p>Enter the password to view and download entries.</p>
+      <div class="pw-row">
+        <input type="password" id="pw-input" placeholder="Password" autocomplete="off"
+               onkeydown="if(event.key==='Enter') checkPassword()" />
+        <button class="btn-green" onclick="checkPassword()">Unlock</button>
+      </div>
+      <div class="pw-error" id="pw-error">Incorrect password. Try again.</div>
+    </div>
+
+    <!-- Data view (hidden until unlocked) -->
+    <div id="data-content" class="hidden">
     <div class="actions-row">
       <div class="count-pill">Total entries: <strong id="entry-count">0</strong></div>
       <div class="action-btns">
@@ -406,6 +459,8 @@
     </div>
   </div>
 
+    </div><!-- /data-content -->
+
   <div class="footer">Data is stored locally in your browser &middot; Download CSV to save permanently</div>
 </div>
 
@@ -419,12 +474,37 @@
   let entries = [];
   try { entries = JSON.parse(localStorage.getItem('eventLeads') || '[]'); } catch(e){}
 
+  // ── ADMIN PASSWORD — change this to your own password ──────────
+  const ADMIN_PASSWORD = 'exsifPGT2026';
+  // ─────────────────────────────────────────────────────────────────
+  let adminUnlocked = false;
+
   function switchTab(tab) {
     const isForm = tab === 'form';
     document.querySelectorAll('.tab').forEach((t, i) => t.classList.toggle('active', isForm ? i === 0 : i === 1));
     document.getElementById('view-form').classList.toggle('hidden', !isForm);
     document.getElementById('view-data').classList.toggle('hidden', isForm);
-    if (!isForm) renderTable();
+    if (!isForm) {
+      document.getElementById('pw-gate').classList.toggle('hidden', adminUnlocked);
+      document.getElementById('data-content').classList.toggle('hidden', !adminUnlocked);
+      if (adminUnlocked) renderTable();
+    }
+  }
+
+  function checkPassword() {
+    const val = document.getElementById('pw-input').value;
+    if (val === ADMIN_PASSWORD) {
+      adminUnlocked = true;
+      document.getElementById('pw-gate').classList.add('hidden');
+      document.getElementById('data-content').classList.remove('hidden');
+      document.getElementById('pw-input').value = '';
+      document.getElementById('pw-error').classList.remove('show');
+      renderTable();
+    } else {
+      document.getElementById('pw-error').classList.add('show');
+      document.getElementById('pw-input').value = '';
+      document.getElementById('pw-input').focus();
+    }
   }
 
   function submitForm() {
